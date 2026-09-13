@@ -2,7 +2,7 @@
 // nó nằm trong localStorage và đồng bộ với Google Sheets qua app.
 // QUY ƯỚC: đổi CACHE_NAME mỗi khi tăng APP_VERSION trong config.js.
 
-const CACHE = "chitieu-v1.05";
+const CACHE = "chitieu-v1.06";
 const SHELL = ["./", "./index.html", "./config.js", "./manifest.json", "./icon-192.png", "./icon-512.png"];
 
 self.addEventListener("install", e => {

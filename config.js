@@ -7,7 +7,7 @@
 //
 const CONFIG = {
   APP_NAME: "Sổ chi tiêu gia đình",
-  APP_VERSION: "1.05",
+  APP_VERSION: "1.06",
 
   // Dán OAuth Client ID dạng "xxxx.apps.googleusercontent.com" vào đây.
   // Lấy ở đâu: chuỗi bạn đã dán vào ô "Client ID" của app bản trước

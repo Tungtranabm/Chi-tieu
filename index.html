@@ -88,6 +88,7 @@ input[type=date]{min-height:44px}
 .btn.ghost{background:#fff;color:var(--ink);border:1px solid var(--line)}
 .btn.wide{width:100%}
 .btn.small{padding:8px 12px;font-size:14px;border-radius:9px}
+.btn.ghost.danger{color:var(--over);border-color:var(--over)}
 
 /* ---- transactions ---- */
 .day{margin-bottom:16px}
@@ -244,7 +245,11 @@ dialog::backdrop{background:rgba(10,20,16,.45)}
         <button class="btn ghost small" id="btnLogout">Đăng xuất</button>
       </div>
       <p class="hint" id="syncInfo" style="margin:12px 0 6px"></p>
-      <button class="btn ghost small" id="btnExportJson">Tải bản sao lưu JSON</button>
+      <div class="row wrap">
+        <button class="btn ghost small" id="btnExportJson">Tải bản sao lưu JSON</button>
+        <button class="btn ghost small" id="btnPull">Tải lại từ Drive</button>
+        <button class="btn ghost small danger" id="btnWipe">Xóa sạch dữ liệu</button>
+      </div>
       <p class="hint" id="appVersion" style="margin:12px 0 0"></p>
     </div>
   </section>
@@ -773,6 +778,45 @@ function dangXuat(){
   toast("Đã đăng xuất, dữ liệu vẫn còn trên máy");
 }
 
+async function xoaSachDuLieu(){
+  if (!confirm("Xóa sạch toàn bộ khoản chi, định mức và khoản mục — trên máy này và trên Google Sheets? Không lấy lại được.")) return;
+  if (!confirm("Chắc chắn xóa? Nên bấm Tải bản sao lưu JSON trước cho an tâm.")) return;
+  db = { GiaoDich: [], DinhMuc: [], DanhMuc: [] };
+  taoDanhMucMacDinh();
+  cfg.lastSync = 0;
+  luuLocal();
+  veTatCa();
+  if (!cfg.daDangNhap){ toast("Đã xóa sạch dữ liệu trên máy"); return; }
+  try{
+    await xinToken(true);
+    await ensureBangTinh();
+    await dayLen();
+    cfg.lastSync = now();
+    luuLocal();
+    veTatCa();
+    toast("Đã xóa sạch, kể cả trên Google Sheets");
+  }catch(e){
+    toast("Đã xóa trên máy, chưa ghi được lên Sheets: " + (e.message || e));
+  }
+}
+
+async function taiLaiTuDrive(){
+  if (!confirm("Bỏ dữ liệu trên máy này và lấy lại đúng theo bản đang có trên Google Sheets?")) return;
+  try{
+    await xinToken(true);
+    await ensureBangTinh();
+    const remote = await taiVe();
+    for (const tab of Object.keys(TABS)) db[tab] = remote[tab] || [];
+    taoDanhMucMacDinh();
+    cfg.lastSync = now();
+    luuLocal();
+    veTatCa();
+    toast("Đã lấy lại dữ liệu từ Google Sheets");
+  }catch(e){
+    toast(String(e.message || e));
+  }
+}
+
 let choTimer = null;
 function hangCho(){
   clearTimeout(choTimer);
@@ -885,6 +929,8 @@ function ganSuKien(){
 
   $("#btnExportCsv").onclick = xuatCsv;
   $("#btnExportJson").onclick = () => taiFile("sao-luu-chi-tieu-" + homNay() + ".json", JSON.stringify(db), "application/json");
+  $("#btnPull").onclick = taiLaiTuDrive;
+  $("#btnWipe").onclick = xoaSachDuLieu;
 
   $("#btnLogin").onclick = () => dongBo(true);
   $("#btnSyncNow").onclick = () => dongBo(true);
