@@ -248,6 +248,7 @@ dialog::backdrop{background:rgba(10,20,16,.45)}
       <div class="row wrap">
         <button class="btn ghost small" id="btnExportJson">Tải bản sao lưu JSON</button>
         <button class="btn ghost small" id="btnPull">Tải lại từ Drive</button>
+        <button class="btn ghost small" id="btnTidy">Dọn dòng đã xóa</button>
         <button class="btn ghost small danger" id="btnWipe">Xóa sạch dữ liệu</button>
       </div>
       <p class="hint" id="appVersion" style="margin:12px 0 0"></p>
@@ -366,8 +367,13 @@ function danhMuc(){
   return song(db.DanhMuc).sort((a,b) => (Number(a.thuTu)||0) - (Number(b.thuTu)||0));
 }
 function taoDanhMucMacDinh(){
-  if (db.DanhMuc.length) return;
-  db.DanhMuc = CATS_MAC_DINH.map((ten, i) => ({ id: uid(), ten, thuTu: i+1, updatedAt: now(), deleted: 0 }));
+  if (song(db.DanhMuc).length) return;
+  CATS_MAC_DINH.forEach((ten, i) => {
+    const id = "cat-" + khongDau(ten).replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+    const cu = db.DanhMuc.find(c => c.id === id);
+    if (cu) Object.assign(cu, { ten, thuTu: i+1, updatedAt: now(), deleted: 0 });
+    else db.DanhMuc.push({ id, ten, thuTu: i+1, updatedAt: now(), deleted: 0 });
+  });
 }
 function tenDanhMuc(){ return danhMuc().map(c => c.ten); }
 function catMacDinh(){
@@ -710,6 +716,36 @@ async function taiVe(){
   return out;
 }
 
+function donDauVetXoa(soNgay){
+  const moc = now() - soNgay * 86400000;
+  let n = 0;
+  for (const tab of Object.keys(TABS)){
+    const truoc = db[tab].length;
+    db[tab] = db[tab].filter(r => !r.deleted || (Number(r.updatedAt) || 0) > moc);
+    n += truoc - db[tab].length;
+  }
+  return n;
+}
+
+async function donNgay(){
+  const n = donDauVetXoa(0);
+  if (!n){ toast("Không có dòng đã xóa nào để dọn"); return; }
+  luuLocal();
+  veTatCa();
+  if (!cfg.daDangNhap){ toast("Đã dọn " + n + " dòng trên máy"); return; }
+  try{
+    await xinToken(true);
+    await ensureBangTinh();
+    await dayLen();
+    cfg.lastSync = now();
+    luuLocal();
+    veTatCa();
+    toast("Đã dọn " + n + " dòng đã xóa");
+  }catch(e){
+    toast("Đã dọn trên máy, chưa ghi được lên Sheets: " + (e.message || e));
+  }
+}
+
 function tronBang(local, remote){
   const map = new Map();
   for (const r of remote || []) map.set(r.id, r);
@@ -749,6 +785,7 @@ async function dongBo(tuongTac){
     await ensureBangTinh();
     const remote = await taiVe();
     for (const tab of Object.keys(TABS)) db[tab] = tronBang(db[tab], remote[tab]);
+    donDauVetXoa(30);
     tuChepDinhMuc();
     await dayLen();
     cfg.lastSync = now();
@@ -781,7 +818,9 @@ function dangXuat(){
 async function xoaSachDuLieu(){
   if (!confirm("Xóa sạch toàn bộ khoản chi, định mức và khoản mục — trên máy này và trên Google Sheets? Không lấy lại được.")) return;
   if (!confirm("Chắc chắn xóa? Nên bấm Tải bản sao lưu JSON trước cho an tâm.")) return;
-  db = { GiaoDich: [], DinhMuc: [], DanhMuc: [] };
+  const t = now();
+  for (const tab of Object.keys(TABS))
+    db[tab] = db[tab].map(r => Object.assign({}, r, { deleted: 1, updatedAt: t }));
   taoDanhMucMacDinh();
   cfg.lastSync = 0;
   luuLocal();
@@ -930,6 +969,7 @@ function ganSuKien(){
   $("#btnExportCsv").onclick = xuatCsv;
   $("#btnExportJson").onclick = () => taiFile("sao-luu-chi-tieu-" + homNay() + ".json", JSON.stringify(db), "application/json");
   $("#btnPull").onclick = taiLaiTuDrive;
+  $("#btnTidy").onclick = donNgay;
   $("#btnWipe").onclick = xoaSachDuLieu;
 
   $("#btnLogin").onclick = () => dongBo(true);
