@@ -1,5 +1,9 @@
-const CACHE = "chitieu-v1.04";
-const SHELL = ["./", "./index.html", "./manifest.json"];
+// Cache "khung" app để mở được khi mất mạng. Dữ liệu không cache ở đây,
+// nó nằm trong localStorage và đồng bộ với Google Sheets qua app.
+// QUY ƯỚC: đổi CACHE_NAME mỗi khi tăng APP_VERSION trong config.js.
+
+const CACHE = "chitieu-v1.05";
+const SHELL = ["./", "./index.html", "./config.js", "./manifest.json", "./icon-192.png", "./icon-512.png"];
 
 self.addEventListener("install", e => {
   e.waitUntil(caches.open(CACHE).then(c => c.addAll(SHELL)).then(() => self.skipWaiting()));

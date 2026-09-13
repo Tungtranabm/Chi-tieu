@@ -5,6 +5,8 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Sổ chi tiêu gia đình v1.04</title>
 <link rel="manifest" href="manifest.json">
+<link rel="icon" href="icon-192.png">
+<link rel="apple-touch-icon" href="icon-192.png">
 <meta name="theme-color" content="#16241F">
 <style>
 :root{
@@ -233,28 +235,17 @@ dialog::backdrop{background:rgba(10,20,16,.45)}
     </div>
 
     <div class="card">
-      <h2>Kết nối Google Sheets</h2>
-      <p class="hint">Dữ liệu nằm trong một bảng tính trên Drive. App tự tải về khi mở và tự lưu lên sau mỗi thay đổi.</p>
-      <label class="field">
-        <span>Client ID (Google Cloud OAuth)</span>
-        <input type="text" id="sClientId" placeholder="....apps.googleusercontent.com">
-      </label>
-      <label class="field">
-        <span>Mã bảng tính (Spreadsheet ID)</span>
-        <input type="text" id="sSheetId" placeholder="Dán mã từ link Google Sheets">
-      </label>
+      <h2>Dữ liệu trên Google Drive</h2>
+      <p class="hint">App tự tạo một file Google Sheets trong Drive của bạn, và tự tìm lại đúng file đó trên mọi máy khi đăng nhập cùng tài khoản. Không cần nhập mã gì.</p>
       <div class="row wrap">
-        <button class="btn small" id="btnConnect">Kết nối Google</button>
-        <button class="btn ghost small" id="btnCreateSheet">Tạo bảng tính mới</button>
+        <button class="btn small" id="btnLogin">Đăng nhập với Google</button>
         <button class="btn ghost small" id="btnSyncNow">Đồng bộ ngay</button>
+        <button class="btn ghost small" id="btnOpenSheet">Mở file Google Sheet ↗</button>
+        <button class="btn ghost small" id="btnLogout">Đăng xuất</button>
       </div>
-      <p class="hint" id="syncInfo" style="margin:12px 0 0"></p>
-    </div>
-
-    <div class="card">
-      <h2>Dữ liệu trên máy</h2>
-      <p class="hint" id="localInfo"></p>
+      <p class="hint" id="syncInfo" style="margin:12px 0 6px"></p>
       <button class="btn ghost small" id="btnExportJson">Tải bản sao lưu JSON</button>
+      <p class="hint" id="appVersion" style="margin:12px 0 0"></p>
     </div>
   </section>
 </main>
@@ -279,15 +270,17 @@ dialog::backdrop{background:rgba(10,20,16,.45)}
   </div>
 </dialog>
 
+<script src="config.js"></script>
 <script src="https://accounts.google.com/gsi/client" async defer></script>
 <script>
 "use strict";
 
 /* ============ hằng số ============ */
-const APP = "Sổ chi tiêu gia đình v1.04";
+const APP = CONFIG.APP_NAME + " v" + CONFIG.APP_VERSION;
 const LS_DATA = "chitieu.data";
 const LS_CFG  = "chitieu.cfg";
-const SCOPE   = "https://www.googleapis.com/auth/spreadsheets";
+const SHEETS_API = "https://sheets.googleapis.com/v4/spreadsheets";
+const DRIVE_API  = "https://www.googleapis.com/drive/v3/files";
 const TABS = {
   GiaoDich: ["id","ngay","khoanMuc","soTien","ghiChu","updatedAt","deleted"],
   DinhMuc : ["id","thang","khoanMuc","soTien","updatedAt","deleted"],
@@ -298,11 +291,11 @@ const CATS_MAC_DINH = [CAT_MAC_DINH,"Phí sinh hoạt","Học tập","Đi lại"
 
 /* ============ trạng thái ============ */
 let db  = { GiaoDich:[], DinhMuc:[], DanhMuc:[] };
-let cfg = { clientId:"", sheetId:"", lastSync:0 };
+let cfg = { clientId:"", sheetId:"", lastSync:0, daDangNhap:false };
 let month = thangCuaNgay(new Date());
 let comboMo = false, comboLoc = "";
 let editingId = null;
-let token = null, tokenExp = 0, tokenClient = null, syncing = false;
+let token = null, tokenExp = 0, tokenClient = null, syncing = false, loiDongBo = "";
 
 /* ============ tiện ích ============ */
 const $ = s => document.querySelector(s);
@@ -342,6 +335,10 @@ function toast(msg){
   toast._t = setTimeout(() => el.classList.remove("show"), 2400);
 }
 function song(list){ return list.filter(r => !r.deleted); }
+function khongDau(s){
+  return String(s == null ? "" : s).normalize("NFD").replace(/[\u0300-\u036f]/g, "")
+    .replace(/đ/g, "d").replace(/Đ/g, "D").toLowerCase().trim();
+}
 
 /* ============ lưu cục bộ ============ */
 function luuLocal(){
@@ -373,7 +370,7 @@ function catMacDinh(){
   return ds.includes(CAT_MAC_DINH) ? CAT_MAC_DINH : (ds[0] || "");
 }
 function themDanhMuc(ten, dinhMucMoi){
-  if (danhMuc().some(c => c.ten.toLowerCase() === ten.toLowerCase())) return false;
+  if (danhMuc().some(c => khongDau(c.ten) === khongDau(ten))) return false;
   db.DanhMuc.push({ id: uid(), ten, thuTu: danhMuc().length + 1, updatedAt: now(), deleted: 0 });
   if (dinhMucMoi > 0) datDinhMuc(month, ten, dinhMucMoi);
   return true;
@@ -415,6 +412,7 @@ function conLai(ten){
 
 /* ============ vẽ giao diện ============ */
 function veTatCa(){
+  datTrangThai();
   veHeader();
   veGiaoDich();
   veTongKet();
@@ -434,8 +432,8 @@ function veHeader(){
 function veCombo(){
   const ul = $("#fCatList");
   if (!comboMo){ ul.hidden = true; ul.innerHTML = ""; return; }
-  const q = comboLoc.trim().toLowerCase();
-  const ds = tenDanhMuc().filter(t => !q || t.toLowerCase().includes(q));
+  const q = khongDau(comboLoc);
+  const ds = tenDanhMuc().filter(t => !q || khongDau(t).includes(q));
   let html = ds.map(ten => {
     const con = conLai(ten);
     const ghi = con === null ? "" : (con >= 0 ? "còn " + tien(con) : "vượt " + tien(-con));
@@ -450,8 +448,8 @@ function chonCombo(ten){
   veCombo();
 }
 function catDangChon(){
-  const v = $("#fCat").value.trim().toLowerCase();
-  return tenDanhMuc().find(t => t.toLowerCase() === v) || "";
+  const v = khongDau($("#fCat").value);
+  return tenDanhMuc().find(t => khongDau(t) === v) || "";
 }
 function esc(s){ return String(s == null ? "" : s).replace(/[&<>"']/g, c => ({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;" }[c])); }
 
@@ -516,8 +514,6 @@ function veTongKet(){
 }
 
 function veCaiDat(){
-  $("#sClientId").value = cfg.clientId || "";
-  $("#sSheetId").value = cfg.sheetId || "";
   const dm = dinhMucThang(month);
   $("#catList").innerHTML = danhMuc().map(c => `
     <div class="cat-row">
@@ -527,12 +523,17 @@ function veCaiDat(){
       <button data-cat-del="${c.id}" aria-label="Xóa khoản mục">×</button>
     </div>`).join("") || '<div class="empty">Chưa có khoản mục nào.</div>';
   $("#budgetTotal").textContent = tien(Object.values(dm).reduce((s,v) => s+v, 0));
-  $("#localInfo").textContent =
-    song(db.GiaoDich).length + " khoản chi đang lưu trên máy. " +
-    (cfg.lastSync ? "Đồng bộ lần cuối " + new Date(cfg.lastSync).toLocaleString("vi-VN") + "." : "Chưa đồng bộ lần nào.");
-  $("#syncInfo").textContent = cfg.sheetId
-    ? "Bảng tính: " + cfg.sheetId
-    : "Chưa có bảng tính. Bấm Tạo bảng tính mới hoặc dán mã bảng tính đã chia sẻ.";
+  const cho = soChoDongBo();
+  $("#syncInfo").textContent =
+    (cfg.daDangNhap ? "Đã đăng nhập Google." : "Chưa đăng nhập, dữ liệu mới chỉ nằm trên máy này.") +
+    " " + song(db.GiaoDich).length + " khoản chi trên máy" +
+    (cho ? ", " + cho + " thay đổi chờ đồng bộ" : "") + "." +
+    (cfg.lastSync ? " Đồng bộ lần cuối " + new Date(cfg.lastSync).toLocaleString("vi-VN") + "." : "") +
+    (loiDongBo ? " " + loiDongBo : "");
+  $("#btnLogin").textContent = cfg.daDangNhap ? "Đăng nhập lại" : "Đăng nhập với Google";
+  $("#btnOpenSheet").hidden = !cfg.sheetId;
+  $("#btnLogout").hidden = !cfg.daDangNhap;
+  $("#appVersion").textContent = APP;
 }
 
 /* ============ thao tác dữ liệu ============ */
@@ -563,12 +564,29 @@ function sauThayDoi(msg){
 }
 
 /* ============ đồng bộ Google Sheets ============ */
-function datTrangThai(trangThai, text){
-  const dot = $("#syncDot");
-  dot.className = "dot" + (trangThai ? " " + trangThai : "");
-  $("#syncText").textContent = text;
+function soChoDongBo(){
+  let n = 0;
+  for (const tab of Object.keys(TABS))
+    n += db[tab].filter(r => (Number(r.updatedAt) || 0) > (cfg.lastSync || 0)).length;
+  return n;
 }
-function coToken(){ return token && now() < tokenExp - 60000; }
+
+function datTrangThai(){
+  let kieu = "", chu = "";
+  if (syncing){ kieu = "busy"; chu = "Đang đồng bộ…"; }
+  else if (!cfg.daDangNhap){ chu = "Chưa đăng nhập"; }
+  else if (!navigator.onLine){ kieu = "err"; chu = "Ngoại tuyến"; }
+  else if (loiDongBo){ kieu = "err"; chu = "Chưa đồng bộ"; }
+  else {
+    const n = soChoDongBo();
+    if (n){ kieu = "busy"; chu = "Chờ đồng bộ (" + n + ")"; }
+    else { kieu = "on"; chu = "Đã đồng bộ"; }
+  }
+  $("#syncDot").className = "dot" + (kieu ? " " + kieu : "");
+  $("#syncText").textContent = chu;
+}
+
+const coToken = () => token && now() < tokenExp - 60000;
 
 function choGoogle(){
   return new Promise(resolve => {
@@ -581,51 +599,90 @@ function choGoogle(){
   });
 }
 
+function clientId(){ return (CONFIG.CLIENT_ID || cfg.clientId || "").trim(); }
+
 async function xinToken(tuongTac){
   if (coToken()) return token;
-  if (!cfg.clientId) throw new Error("Chưa có Client ID");
+  const cid = clientId();
+  if (!cid) throw new Error("Chưa điền CLIENT_ID trong file config.js");
+  if (!navigator.onLine) throw new Error("Đang ngoại tuyến");
   if (!await choGoogle()) throw new Error("Chưa tải được Google, kiểm tra mạng");
-  if (!tokenClient || tokenClient._cid !== cfg.clientId){
-    tokenClient = google.accounts.oauth2.initTokenClient({ client_id: cfg.clientId, scope: SCOPE, callback: () => {} });
-    tokenClient._cid = cfg.clientId;
+  if (!tokenClient || tokenClient._cid !== cid){
+    tokenClient = google.accounts.oauth2.initTokenClient({
+      client_id: cid, scope: CONFIG.SCOPES, callback: () => {}
+    });
+    tokenClient._cid = cid;
   }
   return new Promise((resolve, reject) => {
     tokenClient.callback = res => {
-      if (res.error || !res.access_token) return reject(new Error(res.error_description || res.error || "Không lấy được quyền"));
+      if (res.error || !res.access_token) return reject(new Error(res.error_description || res.error || "Chưa được cấp quyền"));
       token = res.access_token;
-      tokenExp = now() + (Number(res.expires_in) || 3600) * 1000;
+      tokenExp = now() + (Number(res.expires_in) || 3500) * 1000;
+      if (!cfg.daDangNhap){ cfg.daDangNhap = true; luuLocal(); }
       resolve(token);
     };
-    tokenClient.error_callback = err => reject(new Error(err.message || "Chưa được cấp quyền"));
+    tokenClient.error_callback = err => reject(new Error((err && err.message) || "Chưa được cấp quyền"));
     tokenClient.requestAccessToken({ prompt: tuongTac ? "" : "none" });
   });
 }
 
 async function api(url, opt){
   const r = await fetch(url, Object.assign({}, opt, {
-    headers: Object.assign({ Authorization: "Bearer " + token, "Content-Type": "application/json" }, (opt && opt.headers) || {})
+    headers: { Authorization: "Bearer " + token, "Content-Type": "application/json" }
   }));
   if (!r.ok){
     if (r.status === 401) token = null;
-    throw new Error("Google báo lỗi " + r.status + ": " + (await r.text()).slice(0, 200));
+    throw new Error("Google báo lỗi " + r.status + ": " + (await r.text()).slice(0, 160));
   }
   return r.json();
 }
 
-async function taoBangTinh(){
-  await xinToken(true);
-  const body = { properties: { title: "Chi tieu gia dinh - du lieu" },
-                 sheets: Object.keys(TABS).map(t => ({ properties: { title: t } })) };
-  const res = await api("https://sheets.googleapis.com/v4/spreadsheets", { method: "POST", body: JSON.stringify(body) });
-  cfg.sheetId = res.spreadsheetId;
+/* Tìm lại file cũ trong Drive, không có thì tạo mới - giống Project Finance */
+async function ensureBangTinh(){
+  if (cfg.sheetId){
+    try{
+      await api(SHEETS_API + "/" + cfg.sheetId + "?fields=spreadsheetId");
+      await ensureCacTab();
+      return cfg.sheetId;
+    }catch(e){
+      cfg.sheetId = "";
+    }
+  }
+  const q = encodeURIComponent(
+    "name='" + CONFIG.SPREADSHEET_NAME + "' and mimeType='application/vnd.google-apps.spreadsheet' and trashed=false");
+  const found = await api(DRIVE_API + "?q=" + q + "&fields=files(id,name)&spaces=drive");
+  if (found && found.files && found.files.length){
+    cfg.sheetId = found.files[0].id;
+    luuLocal();
+    await ensureCacTab();
+    return cfg.sheetId;
+  }
+  const tao = await api(SHEETS_API, {
+    method: "POST",
+    body: JSON.stringify({
+      properties: { title: CONFIG.SPREADSHEET_NAME },
+      sheets: Object.keys(TABS).map(t => ({ properties: { title: t } }))
+    })
+  });
+  cfg.sheetId = tao.spreadsheetId;
   luuLocal();
-  veCaiDat();
-  return res.spreadsheetId;
+  return cfg.sheetId;
+}
+
+async function ensureCacTab(){
+  const meta = await api(SHEETS_API + "/" + cfg.sheetId + "?fields=sheets.properties.title");
+  const co = (meta.sheets || []).map(x => x.properties.title);
+  const thieu = Object.keys(TABS).filter(t => !co.includes(t));
+  if (!thieu.length) return;
+  await api(SHEETS_API + "/" + cfg.sheetId + ":batchUpdate", {
+    method: "POST",
+    body: JSON.stringify({ requests: thieu.map(t => ({ addSheet: { properties: { title: t } } })) })
+  });
 }
 
 async function taiVe(){
   const ranges = Object.keys(TABS).map(t => "ranges=" + encodeURIComponent(t + "!A1:Z100000")).join("&");
-  const res = await api("https://sheets.googleapis.com/v4/spreadsheets/" + cfg.sheetId + "/values:batchGet?" + ranges);
+  const res = await api(SHEETS_API + "/" + cfg.sheetId + "/values:batchGet?" + ranges);
   const out = {};
   (res.valueRanges || []).forEach((vr, i) => {
     const tab = Object.keys(TABS)[i];
@@ -659,46 +716,67 @@ function tronBang(local, remote){
 }
 
 async function dayLen(){
-  const data = Object.keys(TABS).map(tab => ({
-    range: tab + "!A1",
-    values: [TABS[tab]].concat(db[tab].map(r => TABS[tab].map(c => r[c] != null ? r[c] : "")))
-  }));
-  await api("https://sheets.googleapis.com/v4/spreadsheets/" + cfg.sheetId + "/values:batchClear",
-    { method: "POST", body: JSON.stringify({ ranges: Object.keys(TABS).map(t => t + "!A1:Z100000") }) });
-  await api("https://sheets.googleapis.com/v4/spreadsheets/" + cfg.sheetId + "/values:batchUpdate",
-    { method: "POST", body: JSON.stringify({ valueInputOption: "RAW", data }) });
+  const base = SHEETS_API + "/" + cfg.sheetId + "/values:";
+  await api(base + "batchClear", {
+    method: "POST",
+    body: JSON.stringify({ ranges: Object.keys(TABS).map(t => t + "!A1:Z100000") })
+  });
+  await api(base + "batchUpdate", {
+    method: "POST",
+    body: JSON.stringify({
+      valueInputOption: "RAW",
+      data: Object.keys(TABS).map(tab => ({
+        range: tab + "!A1",
+        values: [TABS[tab]].concat(db[tab].map(r => TABS[tab].map(c => r[c] != null ? r[c] : "")))
+      }))
+    })
+  });
 }
 
 async function dongBo(tuongTac){
   if (syncing) return;
-  if (!cfg.clientId || !cfg.sheetId){
-    datTrangThai("", "Chưa kết nối");
-    if (tuongTac) toast("Điền Client ID và mã bảng tính trong Cài đặt");
-    return;
-  }
+  if (!tuongTac && !cfg.daDangNhap){ datTrangThai(); return; }
   syncing = true;
-  datTrangThai("busy", "Đang đồng bộ…");
+  loiDongBo = "";
+  datTrangThai();
   try{
     await xinToken(tuongTac);
+    await ensureBangTinh();
     const remote = await taiVe();
     for (const tab of Object.keys(TABS)) db[tab] = tronBang(db[tab], remote[tab]);
+    tuChepDinhMuc();
     await dayLen();
     cfg.lastSync = now();
     luuLocal();
+    syncing = false;
     veTatCa();
-    datTrangThai("on", "Đã đồng bộ");
     if (tuongTac) toast("Đã đồng bộ với Google Sheets");
   }catch(e){
-    datTrangThai("err", "Chưa đồng bộ");
-    if (tuongTac) toast(String(e.message || e));
+    loiDongBo = String(e.message || e);
+    syncing = false;
+    veCaiDat();
+    datTrangThai();
+    if (tuongTac) toast(loiDongBo);
   }finally{
     syncing = false;
   }
 }
+
+function dangXuat(){
+  if (token && window.google && google.accounts){
+    try{ google.accounts.oauth2.revoke(token, () => {}); }catch(e){}
+  }
+  token = null; tokenExp = 0;
+  cfg.daDangNhap = false;
+  luuLocal();
+  veTatCa();
+  toast("Đã đăng xuất, dữ liệu vẫn còn trên máy");
+}
+
 let choTimer = null;
 function hangCho(){
   clearTimeout(choTimer);
-  choTimer = setTimeout(() => dongBo(false), 4000);
+  choTimer = setTimeout(() => dongBo(false), 2500);
 }
 
 /* ============ xuất file ============ */
@@ -808,21 +886,12 @@ function ganSuKien(){
   $("#btnExportCsv").onclick = xuatCsv;
   $("#btnExportJson").onclick = () => taiFile("sao-luu-chi-tieu-" + homNay() + ".json", JSON.stringify(db), "application/json");
 
-  $("#sClientId").onchange = e => { cfg.clientId = e.target.value.trim(); token = null; luuLocal(); };
-  $("#sSheetId").onchange = e => { cfg.sheetId = e.target.value.trim(); luuLocal(); veCaiDat(); };
-  $("#btnConnect").onclick = async () => {
-    cfg.clientId = $("#sClientId").value.trim();
-    cfg.sheetId = $("#sSheetId").value.trim();
-    luuLocal();
-    try{ await xinToken(true); toast("Đã kết nối Google"); dongBo(true); }
-    catch(e){ toast(String(e.message || e)); }
-  };
-  $("#btnCreateSheet").onclick = async () => {
-    cfg.clientId = $("#sClientId").value.trim(); luuLocal();
-    try{ await taoBangTinh(); toast("Đã tạo bảng tính mới"); dongBo(true); }
-    catch(e){ toast(String(e.message || e)); }
-  };
+  $("#btnLogin").onclick = () => dongBo(true);
   $("#btnSyncNow").onclick = () => dongBo(true);
+  $("#btnLogout").onclick = () => { if (confirm("Đăng xuất khỏi Google?")) dangXuat(); };
+  $("#btnOpenSheet").onclick = () => {
+    if (cfg.sheetId) window.open("https://docs.google.com/spreadsheets/d/" + cfg.sheetId, "_blank", "noopener");
+  };
   $("#btnAddCat").onclick = () => {
     const ten = $("#newCat").value.trim();
     if (!ten){ $("#newCat").focus(); return; }
@@ -845,7 +914,7 @@ function ganSuKien(){
     const ten = inp.value.trim();
     if (!c || !ten) return;
     const cu = c.ten;
-    if (ten !== cu && tenDanhMuc().some(t => t.toLowerCase() === ten.toLowerCase())){
+    if (ten !== cu && tenDanhMuc().some(t => khongDau(t) === khongDau(ten))){
       toast("Khoản mục này đã có");
       veCaiDat();
       return;
@@ -883,7 +952,7 @@ function khoiDong(){
   tuChepDinhMuc();
   veTatCa();
   luuLocal();
-  dongBo(false);
+  if (cfg.daDangNhap) dongBo(false);
   if ("serviceWorker" in navigator && location.protocol.startsWith("http")){
     navigator.serviceWorker.register("sw.js").catch(() => {});
   }

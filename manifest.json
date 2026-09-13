@@ -1,32 +1,16 @@
 {
-  "name": "Chi Tiêu Ver 1.1.01",
-  "short_name": "Chi Tiêu",
-  "description": "Ứng dụng quản lý thu chi cá nhân theo nhiều ví",
+  "name": "Sổ chi tiêu gia đình",
+  "short_name": "Chi tiêu",
+  "description": "Ghi chi tiêu theo ngày, đặt định mức theo tháng, đồng bộ với Google Sheets trên Drive",
   "start_url": "./index.html",
   "scope": "./",
   "display": "standalone",
+  "background_color": "#EDF1EE",
+  "theme_color": "#16241F",
   "orientation": "portrait",
-  "background_color": "#D1F5FF",
-  "theme_color": "#D1F5FF",
   "lang": "vi",
   "icons": [
-    {
-      "src": "icons/icon-192.png",
-      "sizes": "192x192",
-      "type": "image/png",
-      "purpose": "any"
-    },
-    {
-      "src": "icons/icon-512.png",
-      "sizes": "512x512",
-      "type": "image/png",
-      "purpose": "any"
-    },
-    {
-      "src": "icons/icon-512-maskable.png",
-      "sizes": "512x512",
-      "type": "image/png",
-      "purpose": "maskable"
-    }
+    { "src": "icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any maskable" },
+    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable" }
   ]
 }
