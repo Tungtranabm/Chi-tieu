@@ -1,4 +1,4 @@
-const CACHE = "chitieu-v1.03";
+const CACHE = "chitieu-v1.04";
 const SHELL = ["./", "./index.html", "./manifest.json"];
 
 self.addEventListener("install", e => {

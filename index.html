@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>Sổ chi tiêu gia đình v1.03</title>
+<title>Sổ chi tiêu gia đình v1.04</title>
 <link rel="manifest" href="manifest.json">
 <meta name="theme-color" content="#16241F">
 <style>
@@ -15,7 +15,7 @@
   --surface:#FFFFFF;
   --line:#D8E0DA;
   --safe:#2F6F4F;
-  --over:#B4372E;
+  --over:#E0342B;
   --warn:#C9861E;
   --radius:14px;
   --pad:16px;
@@ -82,7 +82,6 @@ input[type=date]{min-height:44px}
 .combo-list li{padding:10px 11px;border-radius:8px;display:flex;justify-content:space-between;gap:10px;font-size:15px}
 .combo-list li:hover{background:var(--paper)}
 .combo-list .left{color:var(--muted);font-size:13px;white-space:nowrap}
-.combo-list .add{color:var(--safe);font-weight:600}
 .btn{padding:12px 16px;border-radius:11px;background:var(--ink);color:#fff;font-weight:600}
 .btn.ghost{background:#fff;color:var(--ink);border:1px solid var(--line)}
 .btn.wide{width:100%}
@@ -112,6 +111,7 @@ input[type=date]{min-height:44px}
 .fill{height:100%;background:var(--safe);border-radius:6px;transition:width .25s ease}
 .fill.warn{background:var(--warn)}
 .fill.over{background:var(--over)}
+.fill.none{background:var(--muted);opacity:.45}
 .mark{position:absolute;top:-3px;bottom:-3px;width:2px;background:var(--ink);opacity:.45}
 .bar-note{font-size:12.5px;color:var(--muted);margin-top:5px}
 .bar-note.over{color:var(--over)}
@@ -284,7 +284,7 @@ dialog::backdrop{background:rgba(10,20,16,.45)}
 "use strict";
 
 /* ============ hằng số ============ */
-const APP = "Sổ chi tiêu gia đình v1.03";
+const APP = "Sổ chi tiêu gia đình v1.04";
 const LS_DATA = "chitieu.data";
 const LS_CFG  = "chitieu.cfg";
 const SCOPE   = "https://www.googleapis.com/auth/spreadsheets";
@@ -368,6 +368,10 @@ function taoDanhMucMacDinh(){
   db.DanhMuc = CATS_MAC_DINH.map((ten, i) => ({ id: uid(), ten, thuTu: i+1, updatedAt: now(), deleted: 0 }));
 }
 function tenDanhMuc(){ return danhMuc().map(c => c.ten); }
+function catMacDinh(){
+  const ds = tenDanhMuc();
+  return ds.includes(CAT_MAC_DINH) ? CAT_MAC_DINH : (ds[0] || "");
+}
 function themDanhMuc(ten, dinhMucMoi){
   if (danhMuc().some(c => c.ten.toLowerCase() === ten.toLowerCase())) return false;
   db.DanhMuc.push({ id: uid(), ten, thuTu: danhMuc().length + 1, updatedAt: now(), deleted: 0 });
@@ -437,15 +441,17 @@ function veCombo(){
     const ghi = con === null ? "" : (con >= 0 ? "còn " + tien(con) : "vượt " + tien(-con));
     return `<li data-pick="${esc(ten)}"><span>${esc(ten)}</span><span class="left">${ghi}</span></li>`;
   }).join("");
-  if (q && !ds.some(t => t.toLowerCase() === q))
-    html += `<li data-new="${esc(comboLoc.trim())}"><span class="add">Thêm khoản mục “${esc(comboLoc.trim())}”</span></li>`;
-  ul.innerHTML = html || '<li class="left" style="padding:12px">Không có khoản mục nào</li>';
+  ul.innerHTML = html || '<li class="left" style="padding:12px">Không có khoản mục nào khớp. Thêm mới ở tab Cài đặt.</li>';
   ul.hidden = false;
 }
 function chonCombo(ten){
   $("#fCat").value = ten;
   comboMo = false; comboLoc = "";
   veCombo();
+}
+function catDangChon(){
+  const v = $("#fCat").value.trim().toLowerCase();
+  return tenDanhMuc().find(t => t.toLowerCase() === v) || "";
 }
 function esc(s){ return String(s == null ? "" : s).replace(/[&<>"']/g, c => ({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;" }[c])); }
 
@@ -484,18 +490,15 @@ function veTongKet(){
 
   $("#reportBars").innerHTML = cats.length ? cats.map(ten => {
     const d = dm[ten] || 0, c = chi[ten] || 0;
-    const pct = d > 0 ? Math.min(c / d, 1) * 100 : (c > 0 ? 100 : 0);
-    const cls = d > 0 ? (c > d ? "over" : (c / d > tienDoThang + .1 ? "warn" : "")) : "over";
+    const ty = d > 0 ? c / d : null;
+    const pct = ty === null ? (c > 0 ? 100 : 0) : Math.min(ty, 1) * 100;
+    const cls = ty === null ? "none" : (ty > 1 ? "over" : (ty >= 2/3 ? "warn" : ""));
     const mark = (laThangNay && d > 0) ? `<div class="mark" style="left:${(tienDoThang*100).toFixed(1)}%"></div>` : "";
-    let note;
-    if (d <= 0) note = c > 0 ? '<div class="bar-note">Chi ngoài định mức</div>' : "";
-    else if (c > d) note = `<div class="bar-note over">Vượt ${tien(c-d)}</div>`;
-    else note = `<div class="bar-note">Còn ${tien(d-c)}</div>`;
     return `<div class="bar-item">
       <div class="bar-top"><span class="bar-name">${esc(ten)}</span>
         <span class="bar-nums num">${tien(c)}${d > 0 ? " / " + tien(d) : ""}</span></div>
       <div class="track"><div class="fill ${cls}" style="width:${pct.toFixed(1)}%"></div>${mark}</div>
-      ${note}</div>`;
+    </div>`;
   }).join("") : '<div class="empty">Chưa có dữ liệu.</div>';
 
   const list = giaoDichThang(month);
@@ -536,10 +539,8 @@ function veCaiDat(){
 function themGiaoDich(){
   const so = docTien($("#fAmount").value);
   if (!so){ toast("Nhập số tiền đã"); $("#fAmount").focus(); return; }
-  let ten = $("#fCat").value.trim();
-  if (!ten){ toast("Chọn khoản mục đã"); $("#fCat").focus(); return; }
-  const khop = tenDanhMuc().find(t => t.toLowerCase() === ten.toLowerCase());
-  if (khop) ten = khop; else themDanhMuc(ten, 0);
+  const ten = catDangChon();
+  if (!ten){ toast("Chọn khoản mục trong danh sách"); $("#fCat").focus(); return; }
   db.GiaoDich.push({
     id: uid(), ngay: $("#fDate").value || homNay(), khoanMuc: ten, soTien: so,
     ghiChu: $("#fNote").value.trim(), updatedAt: now(), deleted: 0
@@ -759,12 +760,19 @@ function ganSuKien(){
   const inCat = $("#fCat");
   inCat.onfocus = () => { comboMo = true; comboLoc = ""; veCombo(); };
   inCat.oninput = () => { comboMo = true; comboLoc = inCat.value; veCombo(); };
-  inCat.onblur = () => setTimeout(() => { comboMo = false; veCombo(); }, 160);
+  inCat.onblur = () => setTimeout(() => {
+    comboMo = false;
+    veCombo();
+    const hopLe = catDangChon();
+    if (hopLe) inCat.value = hopLe;
+    else if (inCat.value.trim()) inCat.value = catMacDinh();
+  }, 160);
   inCat.onkeydown = e => {
     if (e.key === "Enter"){
       e.preventDefault();
-      const dau = $("#fCatList li[data-pick], #fCatList li[data-new]");
-      if (dau) dau.click(); else $("#fAmount").focus();
+      const dau = $("#fCatList li[data-pick]");
+      if (dau) dau.click();
+      $("#fAmount").focus();
     } else if (e.key === "Escape"){ comboMo = false; veCombo(); }
   };
   $("#fCatToggle").onclick = () => {
@@ -775,13 +783,7 @@ function ganSuKien(){
   $("#fCatList").onmousedown = e => e.preventDefault();
   $("#fCatList").onclick = e => {
     const pick = e.target.closest("[data-pick]");
-    if (pick) return chonCombo(pick.dataset.pick);
-    const moi = e.target.closest("[data-new]");
-    if (moi){
-      themDanhMuc(moi.dataset.new, 0);
-      chonCombo(moi.dataset.new);
-      sauThayDoi("Đã thêm khoản mục " + moi.dataset.new);
-    }
+    if (pick) chonCombo(pick.dataset.pick);
   };
   $("#btnAdd").onclick = themGiaoDich;
   $("#fAmount").onkeydown = e => { if (e.key === "Enter") themGiaoDich(); };
@@ -876,7 +878,7 @@ function khoiDong(){
   docLocal();
   taoDanhMucMacDinh();
   $("#fDate").value = homNay();
-  $("#fCat").value = tenDanhMuc().includes(CAT_MAC_DINH) ? CAT_MAC_DINH : (tenDanhMuc()[0] || "");
+  $("#fCat").value = catMacDinh();
   ganSuKien();
   tuChepDinhMuc();
   veTatCa();
