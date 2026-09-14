@@ -89,6 +89,11 @@ input[type=date]{min-height:44px}
 .btn.wide{width:100%}
 .btn.small{padding:8px 12px;font-size:14px;border-radius:9px}
 .btn.ghost.danger{color:var(--over);border-color:var(--over)}
+.btn.solid-danger{background:var(--over);color:#fff}
+.check{display:flex;align-items:center;gap:8px;font-size:14px;margin-bottom:12px;cursor:pointer}
+.check input{width:18px;height:18px;accent-color:var(--safe)}
+.tx-tag{display:inline-block;font-size:11px;font-weight:600;color:var(--safe);border:1px solid var(--safe);
+  border-radius:999px;padding:1px 7px;margin-right:6px;vertical-align:1px}
 
 /* ---- transactions ---- */
 .day{margin-bottom:16px}
@@ -190,7 +195,7 @@ dialog::backdrop{background:rgba(10,20,16,.45)}
           <input type="date" id="fDate">
         </label>
         <label class="field" style="flex:1">
-          <span>Số tiền</span>
+          <span id="lbAmount">Số tiền</span>
           <input type="text" id="fAmount" inputmode="numeric" placeholder="Ví dụ 50k, 1tr2">
         </label>
       </div>
@@ -207,6 +212,11 @@ dialog::backdrop{background:rgba(10,20,16,.45)}
           <span>Ghi chú</span>
           <input type="text" id="fNote" placeholder="Không bắt buộc">
         </label>
+      </div>
+      <label class="check"><input type="checkbox" id="fTraGop"> Khoản trả góp nhiều tháng</label>
+      <div class="grid2" id="traGopBox" hidden style="margin-bottom:14px">
+        <label class="field"><span>Số tháng</span><input type="text" id="fSoThang" inputmode="numeric" placeholder="Ví dụ 12"></label>
+        <label class="field"><span>Bắt đầu từ tháng</span><input type="month" id="fThangDau"></label>
       </div>
       <button class="btn wide" id="btnAdd">Lưu khoản chi</button>
     </div>
@@ -264,6 +274,16 @@ dialog::backdrop{background:rgba(10,20,16,.45)}
 
 <div id="toast" role="status" aria-live="polite"></div>
 
+<dialog id="delDialog">
+  <h2 style="margin-bottom:8px">Xóa khoản trả góp</h2>
+  <p class="hint" id="delInfo"></p>
+  <div class="row" style="gap:8px">
+    <button class="btn ghost small" id="delCancel" style="flex:1">Hủy</button>
+    <button class="btn small" id="delOne" style="flex:1">Chỉ kỳ này</button>
+    <button class="btn small solid-danger" id="delAll" style="flex:1">Cả chuỗi</button>
+  </div>
+</dialog>
+
 <dialog id="txDialog">
   <h2 style="margin-bottom:12px">Sửa khoản chi</h2>
   <label class="field"><span>Ngày</span><input type="date" id="eDate"></label>
@@ -288,7 +308,7 @@ const LS_CFG  = "chitieu.cfg";
 const SHEETS_API = "https://sheets.googleapis.com/v4/spreadsheets";
 const DRIVE_API  = "https://www.googleapis.com/drive/v3/files";
 const TABS = {
-  GiaoDich: ["id","ngay","khoanMuc","soTien","ghiChu","updatedAt","deleted"],
+  GiaoDich: ["id","ngay","khoanMuc","soTien","ghiChu","chuoi","ky","ngayMua","updatedAt","deleted"],
   DinhMuc : ["id","thang","khoanMuc","soTien","updatedAt","deleted"],
   DanhMuc : ["id","ten","thuTu","updatedAt","deleted"]
 };
@@ -300,7 +320,7 @@ let db  = { GiaoDich:[], DinhMuc:[], DanhMuc:[] };
 let cfg = { clientId:"", sheetId:"", lastSync:0, daDangNhap:false };
 let month = thangCuaNgay(new Date());
 let comboMo = false, comboLoc = "";
-let editingId = null;
+let editingId = null, xoaId = null;
 let token = null, tokenExp = 0, tokenClient = null, syncing = false, loiDongBo = "";
 
 /* ============ tiện ích ============ */
@@ -316,6 +336,10 @@ function thangTruoc(m){ const [y,mm] = m.split("-").map(Number); const d = new D
 function doiThang(m, b){ const [y,mm] = m.split("-").map(Number); const d = new Date(y, mm-1+b, 1); return d.getFullYear() + "-" + String(d.getMonth()+1).padStart(2,"0"); }
 function soNgayThang(m){ const [y,mm] = m.split("-").map(Number); return new Date(y, mm, 0).getDate(); }
 function nhanThang(m){ const [y,mm] = m.split("-"); return "Tháng " + Number(mm) + "/" + y; }
+function nhanNgayNgan(s){
+  const d = new Date(s + "T00:00:00");
+  return d.getDate() + "/" + (d.getMonth()+1) + "/" + d.getFullYear();
+}
 function nhanNgay(s){
   const d = new Date(s + "T00:00:00");
   const thu = ["Chủ nhật","Thứ hai","Thứ ba","Thứ tư","Thứ năm","Thứ sáu","Thứ bảy"][d.getDay()];
@@ -476,7 +500,9 @@ function veGiaoDich(){
       <div class="tx">
         <div class="tx-main" data-edit="${t.id}">
           <div class="tx-cat">${esc(t.khoanMuc)}</div>
-          ${t.ghiChu ? `<div class="tx-meta">${esc(t.ghiChu)}</div>` : ""}
+          ${t.ky || t.ghiChu ? `<div class="tx-meta">${
+            t.ky ? `<span class="tx-tag">Trả góp ${esc(t.ky)}</span>` : ""
+          }${t.ngayMua ? "mua " + nhanNgayNgan(t.ngayMua) + (t.ghiChu ? " · " : "") : ""}${esc(t.ghiChu || "")}</div>` : ""}
         </div>
         <div class="tx-amt num">${tien(t.soTien)}</div>
         <button class="tx-del" data-del="${t.id}" aria-label="Xóa khoản chi">×</button>
@@ -553,14 +579,83 @@ function themGiaoDich(){
   if (!so){ toast("Nhập số tiền đã"); $("#fAmount").focus(); return; }
   const ten = catDangChon();
   if (!ten){ toast("Chọn khoản mục trong danh sách"); $("#fCat").focus(); return; }
+  const ngay = $("#fDate").value || homNay();
+  const ghiChu = $("#fNote").value.trim();
+
+  if ($("#fTraGop").checked){
+    const soThang = Math.floor(Number(String($("#fSoThang").value).replace(/\D/g, "")) || 0);
+    const thangDau = $("#fThangDau").value || ngay.slice(0, 7);
+    if (soThang < 2){ toast("Số tháng phải từ 2 trở lên"); $("#fSoThang").focus(); return; }
+    if (soThang > 120){ toast("Số tháng tối đa là 120"); $("#fSoThang").focus(); return; }
+    const r = themTraGop(so, ten, ghiChu, soThang, thangDau, ngay);
+    $("#fAmount").value = ""; $("#fNote").value = ""; $("#fSoThang").value = "";
+    $("#fTraGop").checked = false;
+    veTraGopBox();
+    sauThayDoi("Đã chia " + tien(so) + " thành " + soThang + " kỳ, mỗi kỳ " + tien(r.moi) + " từ " + nhanThang(thangDau));
+    return;
+  }
+
   db.GiaoDich.push({
-    id: uid(), ngay: $("#fDate").value || homNay(), khoanMuc: ten, soTien: so,
-    ghiChu: $("#fNote").value.trim(), updatedAt: now(), deleted: 0
+    id: uid(), ngay, khoanMuc: ten, soTien: so,
+    ghiChu, chuoi: "", ky: "", ngayMua: "", updatedAt: now(), deleted: 0
   });
   $("#fAmount").value = ""; $("#fNote").value = "";
   const con = conLai(ten);
   sauThayDoi("Đã lưu " + tien(so) + (con === null ? "" : " · " + ten + (con >= 0 ? " còn " + tien(con) : " vượt " + tien(-con))));
 }
+
+function veTraGopBox(){
+  const bat = $("#fTraGop").checked;
+  $("#traGopBox").hidden = !bat;
+  $("#lbAmount").textContent = bat ? "Tổng tiền cả khoản" : "Số tiền";
+  if (bat && !$("#fThangDau").value) $("#fThangDau").value = ($("#fDate").value || homNay()).slice(0, 7);
+}
+function themTraGop(tong, ten, ghiChu, soThang, thangDau, ngayMua){
+  const chuoi = uid();
+  const moi = Math.floor(tong / soThang);
+  const du = tong - moi * soThang;
+  const t = now();
+  for (let k = 0; k < soThang; k++){
+    db.GiaoDich.push({
+      id: uid(),
+      ngay: doiThang(thangDau, k) + "-01",
+      khoanMuc: ten,
+      soTien: moi + (k === soThang - 1 ? du : 0),
+      ghiChu, chuoi,
+      ky: (k + 1) + "/" + soThang,
+      ngayMua,
+      updatedAt: t + k,
+      deleted: 0
+    });
+  }
+  return { chuoi, moi };
+}
+
+function yeuCauXoa(id){
+  const t = song(db.GiaoDich).find(x => x.id === id);
+  if (!t) return;
+  if (!t.chuoi){
+    if (confirm("Xóa khoản chi này?")) xoaGiaoDich(id);
+    return;
+  }
+  xoaId = id;
+  const conLaiKy = song(db.GiaoDich).filter(x => x.chuoi === t.chuoi);
+  const tong = conLaiKy.reduce((a, b) => a + (Number(b.soTien) || 0), 0);
+  $("#delInfo").textContent = "Đây là kỳ " + (t.ky || "") + " của một khoản trả góp"
+    + (t.ngayMua ? " mua ngày " + nhanNgayNgan(t.ngayMua) : "")
+    + ". Chuỗi còn " + conLaiKy.length + " kỳ, tổng " + tien(tong) + ".";
+  $("#delDialog").showModal();
+}
+
+function xoaCaChuoi(id){
+  const t = db.GiaoDich.find(x => x.id === id);
+  if (!t || !t.chuoi) return;
+  const gio = now();
+  let n = 0;
+  for (const x of db.GiaoDich) if (x.chuoi === t.chuoi && !x.deleted){ x.deleted = 1; x.updatedAt = gio; n++; }
+  sauThayDoi("Đã xóa cả chuỗi " + n + " kỳ");
+}
+
 function xoaGiaoDich(id){
   const t = db.GiaoDich.find(x => x.id === id);
   if (!t) return;
@@ -950,9 +1045,15 @@ function ganSuKien(){
   $("#fAmount").onkeydown = e => { if (e.key === "Enter") themGiaoDich(); };
   $("#fNote").onkeydown = e => { if (e.key === "Enter") themGiaoDich(); };
 
+  $("#fTraGop").onchange = veTraGopBox;
+  $("#fSoThang").onkeydown = e => { if (e.key === "Enter") themGiaoDich(); };
+  $("#delCancel").onclick = () => $("#delDialog").close();
+  $("#delOne").onclick = () => { $("#delDialog").close(); xoaGiaoDich(xoaId); };
+  $("#delAll").onclick = () => { $("#delDialog").close(); xoaCaChuoi(xoaId); };
+
   $("#txList").onclick = e => {
     const del = e.target.closest("[data-del]");
-    if (del){ if (confirm("Xóa khoản chi này?")) xoaGiaoDich(del.dataset.del); return; }
+    if (del){ yeuCauXoa(del.dataset.del); return; }
     const ed = e.target.closest("[data-edit]");
     if (ed) moSua(ed.dataset.edit);
   };
