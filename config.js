@@ -16,7 +16,7 @@ const CONFIG = {
   // origins của client đó.
   // Để trống thì app tạm dùng Client ID đã lưu trên máy từ bản trước,
   // nhưng máy mới sẽ không đăng nhập được cho tới khi điền vào đây.
-  CLIENT_ID: "",
+  CLIENT_ID: "1026702565139-sb60801oe2um2jrngs67k2qqqg0q2218.apps.googleusercontent.com",
 
   // Tên file Google Sheets app tự tạo / tự tìm lại trong Drive.
   // Giữ đúng tên này để app nhận lại file dữ liệu đã có sẵn.
