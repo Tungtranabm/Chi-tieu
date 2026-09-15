@@ -8,8 +8,10 @@
 <link rel="icon" href="icon-192.png">
 <link rel="apple-touch-icon" href="icon-192.png">
 <meta name="theme-color" content="#F3F4E9">
+<meta name="color-scheme" content="light only">
 <style>
 :root{
+  color-scheme: only light;
   --ink:#2B2B26;
   --ink-soft:#5E5E54;
   --muted:#77776C;
@@ -34,6 +36,8 @@
 *{box-sizing:border-box}
 html,body{margin:0;padding:0}
 body{
+  color-scheme: only light;
+  forced-color-adjust:none;
   background:var(--paper);
   color:var(--ink);
   font-family:system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
